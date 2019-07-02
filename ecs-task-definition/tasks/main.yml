@@ -1,0 +1,85 @@
+---
+
+- name: install required packages
+  pip:
+    name: awscli
+    state: latest
+
+- name: get AWS account
+  aws_caller_facts:
+  register: aws_account_facts
+  when: aws_account_id is not defined
+
+- set_fact:
+    aws_account_id: "{{ aws_account_facts.account }}"
+  when: aws_account_id is not defined
+
+- name: verify ecr image
+  shell: "aws ecr describe-images --repository-name {{ aws_ecr_repository }} --image-ids imageTag={{ aws_ecr_tag }} --registry-id {{ aws_ecr_registry_id }} --output json --region {{ aws_ecr_region }} "
+  register: ecr_result
+  failed_when: "'imageDigest' not in ecr_result.stdout"
+  retries: 60
+  delay: 1
+  until: "'imageDigest' in ecr_result.stdout"
+
+- name: verify container_healthcheck format
+  fail:
+    msg: container_healthcheck format is invalid. refer to https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_definition_parameters.html#container_definition_healthcheck
+  when:
+    - container_healthcheck is not none
+    - >
+      container_healthcheck.command is not defined or container_healthcheck.command|length == 0 or 
+      container_healthcheck.interval is not defined or container_healthcheck.interval is not number or container_healthcheck.interval == "" or
+      container_healthcheck.timeout is not defined or container_healthcheck.timeout is not number or container_healthcheck.timeout == "" or
+      container_healthcheck.retries is not defined or container_healthcheck.retries is not number or container_healthcheck.retries == "" or
+      container_healthcheck.startPeriod is not defined or container_healthcheck.startPeriod is not number or container_healthcheck.startPeriod == ""
+
+- name: load default task definition (with healthcheck)
+  include_vars:
+    file: task-definition-with-healthcheck.yaml
+    name: default_task_definition
+  when: 
+  - taskDefinition is none
+  - container_healthcheck is not none
+
+- name: load default task definition
+  include_vars:
+    file: task-definition.yaml
+    name: default_task_definition
+  when: 
+  - taskDefinition is none
+  - container_healthcheck is none
+
+- set_fact:
+    taskDefinition: "{{ default_task_definition }}"
+  when: taskDefinition is none
+
+- name: create temporary file
+  tempfile:
+    state: file
+    suffix: "ecs_task_definition_{{ service }}"
+  register: tempFile
+
+- name: populate temporary file with JSON
+  copy:
+    content: "{{ taskDefinition | to_json }}"
+    dest: "{{ tempFile.path }}"
+
+- name: publish ecs task definition
+  shell: "aws ecs register-task-definition --cli-input-json file://{{ tempFile.path }} --output json --region {{ aws_region }}"
+  register: result
+  failed_when: "'revision' not in result.stdout"
+
+- name: "create build artefact {{ build_result_file }}"
+  copy:
+    content: "{{ result.stdout }}"
+    dest: "{{ build_result_file }}"
+
+- name: remove temporary file
+  file:
+    path: "{{ tempFile.path }}"
+    state: absent
+
+- set_fact:
+    taskDefinition: null
+    container_healthcheck: null

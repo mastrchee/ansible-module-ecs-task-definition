@@ -1,0 +1,46 @@
+---
+
+executionRoleArn: "{{ task_execution_role_arn }}"
+taskRoleArn: "{{ task_role_arn | default(task_role_default_arn, true) }}"
+containerDefinitions:
+- logConfiguration:
+    logDriver: awslogs
+    options:
+      awslogs-group: "/ecs/{{ service }}"
+      awslogs-region: "{{ aws_region }}"
+      awslogs-stream-prefix: ecs
+      awslogs-create-group: "true"
+  portMappings: "{{ container_port_mappings }}"
+  image: "{{ container_image_name }}"
+  essential: "{{ container_essential }}"
+  name: "{{ container_name }}"
+  environment: "{{ container_environment }}"
+- name: datadog-agent
+  image: datadog/agent:latest
+  essential: false
+  portMappings:
+  - hostPort: 8126
+    protocol: tcp
+    containerPort: 8126
+  - hostPort: 8125
+    protocol: udp
+    containerPort: 8125
+  environment:
+  - name: DD_APM_ENABLED
+    value: "{{ datadog_apm_enabled|bool|lower }}"
+  - name: ECS_FARGATE
+    value: "true"
+  - name: DD_APM_IGNORE_RESOURCES
+    value: "{{ datadog_apm_ignored_resources }}"
+  - name: DD_APM_ANALYZED_SPANS
+    value: "{{ datadog_apm_analyzed_spans }}"
+  - name: DD_APM_NON_LOCAL_TRAFFIC
+    value: "true"
+  secrets:
+  - name: DD_API_KEY
+    valueFrom: "/datadog/api-key"
+memory: "{{ task_memory }}"
+family: "{{ task_family_name }}"
+requiresCompatibilities: "{{ task_compatibilities }}"
+networkMode: "{{ task_network_mode }}"
+cpu: "{{ task_cpu }}"

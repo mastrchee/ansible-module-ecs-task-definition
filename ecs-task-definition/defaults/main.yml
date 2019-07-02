@@ -1,0 +1,42 @@
+---
+# defaults file for task definition
+
+
+aws_region: "{{ lookup('env', 'AWS_DEFAULT_REGION') | default('eu-west-1', true) }}"
+aws_ecr_repository: "{{ repo_namespace }}/{{ service }}"
+aws_ecr_region: "{{ aws_region }}"
+aws_ssm_region: "{{ aws_region }}"
+aws_ecr_image: "{{ aws_account_id }}.dkr.ecr.{{ aws_ecr_region }}.amazonaws.com/{{ aws_ecr_repository }}:{{ aws_ecr_tag }}"
+aws_ecr_registry_id: "{{ aws_account_id }}"
+
+container_host_port: 8080
+container_protocol: "tcp"
+container_port: 8080
+container_essential: true
+container_name: "{{ service }}"
+container_image_name: "{{ aws_ecr_image }}"
+container_environment:
+  - name: SERVICE
+    value: "{{ service }}"
+container_port_mappings:
+  - hostPort: "{{ container_host_port }}"
+    protocol: "{{ container_protocol }}"
+    containerPort: "{{ container_port }}"
+container_healthcheck:
+
+task_role_arn: "{{ lookup('aws_ssm', '/{{ service }}/shared/ecs-task-role-arn', region=aws_ssm_region) }}"
+task_role_default_arn: "arn:aws:iam::{{ aws_account_id }}:role/ecs-task-role-default"
+task_execution_role_arn: "arn:aws:iam::{{ aws_account_id }}:role/ecsTaskExecutionRole"
+task_family_name: "{{ service }}"
+task_compatibilities:
+  - "FARGATE"
+task_network_mode: "awsvpc"
+task_cpu: "{{ container_cpu }}"
+task_memory: "{{ container_memory }}"
+
+datadog_apm_enabled: false
+datadog_apm_analyzed_spans: ""
+datadog_apm_ignored_resources: "GET /status.json"
+
+build_result_file: build_result.json
+taskDefinition:
